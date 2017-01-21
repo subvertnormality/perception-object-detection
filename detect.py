@@ -4,7 +4,9 @@ from matplotlib import pyplot as plt
 import copy
 import time
 import requests
-
+import voice_engine
+import sound_engine
+from threading import Thread
 
 cert_file_path = "certs/client.crt"
 key_file_path = "certs/client.key"
@@ -26,14 +28,16 @@ q2r = cv2.imread('images/2r.png',0)
 q3r = cv2.imread('images/3r.png',0)
 
 truth = np.array([[[True,True],[True,False],[False,False],[False,True]],[[True,True],[True,False],[False,False],[False,True]],[[True,True],[True,False],[False,False],[False,True]],[[True,True],[True,False],[False,False],[False,True]]])
-one_bounds = np.array([[635, 0], [635, 163], [890, 163], [890, 0]])
-two_bounds = np.array([[890, 0], [890, 163], [1190, 163], [1190, 0]])
-three_bounds = np.array([[1190, 0], [1190, 163], [1445, 163], [1445, 0]])
-four_bounds = np.array([[610, 700], [610, 1080], [920, 1080], [920, 700]])
-five_bounds = np.array([[920, 700], [920, 1080], [1250, 1080], [1250, 700]])
-six_bounds = np.array([[1250, 700], [1250, 1080], [1650, 1080], [1650, 700]])
+one_bounds = np.array([[635, 0], [635, 180], [890, 180], [890, 0]])
+two_bounds = np.array([[890, 0], [890, 180], [1190, 180], [1190, 0]])
+three_bounds = np.array([[1190, 0], [1190, 180], [1445, 180], [1445, 0]])
+four_bounds = np.array([[500, 725], [500, 1080], [815, 1080], [815, 700]])
+five_bounds = np.array([[815, 725], [815, 1080], [1250, 1080], [1250, 700]])
+six_bounds = np.array([[1250, 725], [1250, 1080], [1650, 1080], [1650, 700]])
 
 bounds = [one_bounds, two_bounds, three_bounds, four_bounds, five_bounds, six_bounds]
+
+frame_mutable = None
 
 def do_transform(ref, scene):
 
@@ -90,19 +94,26 @@ def do_transform(ref, scene):
 
     return np.array([])
 
+def write_image():
+    global frame_mutable
+    while True:
+        ret, frame_mutable = cap.read()
+        cv2.imshow('Arena', frame_mutable)
+        if cv2.waitKey(1) == 27: 
+            break  # esc to quit
 
-
+cap = cv2.VideoCapture(0)
+cap.set(3,1920)
+cap.set(4,1080)
+t1 = Thread(target=write_image)
+t1.start()
 
 while True:
     try:
-        cap = cv2.VideoCapture(0)
-        cap.set(3,1920)
-        cap.set(4,1080)
-        ret, frame = cap.read()
-        cv2.imwrite("frame.jpg", frame)
 
+        frame = frame_mutable
+        cv2.imwrite("frame.jpg", frame_mutable)
         # Display the resulting frame
-
         q1dst = np.array([])
         q1dst = do_transform(q1, frame)
         if (q1dst.size == 0):
@@ -110,6 +121,7 @@ while True:
         if (q1dst.size == 0):
             q1dst = do_transform(q1r, frame)
         if (q1dst.size == 0):
+            sound_engine.one()
             print('skipping because of 1')
             continue
         q2dst = np.array([])
@@ -119,6 +131,7 @@ while True:
         if (q2dst.size == 0):
             q2dst = do_transform(q2r, frame)
         if (q2dst.size == 0):
+            sound_engine.two()
             print('skipping because of 2')
             continue
         q3dst = np.array([])
@@ -128,6 +141,7 @@ while True:
         if (q3dst.size == 0):
             q3dst = do_transform(q3r, frame)
         if (q3dst.size == 0):
+            sound_engine.three()
             print('skipping because of 3')
             continue
         dsts = [q1dst, q2dst, q3dst]
@@ -154,6 +168,9 @@ while True:
         if (1 in result and 2 in result and 3 in result and len(result) == 6):
             print('posting')
             r = requests.post(url, json={'attempt': result}, cert=cert, verify=False)
+            if (r.json()['win']):
+                sound_engine.level_complete()
+                voice_engine.fspeak('Round complete. Next round unlocked.')
         else:
             print('ígnoring')
     except Exception as e:
